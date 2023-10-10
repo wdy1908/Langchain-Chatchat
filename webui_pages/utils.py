@@ -237,7 +237,7 @@ class ApiRequest:
         '''
         try:
             with response as r:
-                for chunk in r.iter_text(None):
+                for chunk in r.iter_text():
                     if not chunk: # fastchat api yield empty bytes on start and end
                         continue
                     if as_json:

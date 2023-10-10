@@ -2,31 +2,34 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import json
 from server.chat import search_engine_chat
-from configs import LLM_MODEL, TEMPERATURE, VECTOR_SEARCH_TOP_K, SCORE_THRESHOLD
-
+from configs import VECTOR_SEARCH_TOP_K
 import asyncio
-
+from server.agent import model_container
 
 async def search_engine_iter(query: str):
     response = await search_engine_chat(query=query,
-                                         search_engine_name="bing",
-                                         model_name=LLM_MODEL,
-                                         temperature=TEMPERATURE,
+                                         search_engine_name="bing", # 这里切换搜索引擎
+                                         model_name=model_container.MODEL.model_name,
+                                         temperature=model_container.MODEL.temperature,
                                          history=[],
                                          top_k = VECTOR_SEARCH_TOP_K,
-                                         prompt_name = "knowledge_base_chat",
+                                         prompt_name = "default",
                                          stream=False)
 
     contents = ""
+
     async for data in response.body_iterator: # 这里的data是一个json字符串
         data = json.loads(data)
         contents = data["answer"]
         docs = data["docs"]
+
     return contents
 
 def search_internet(query: str):
+
     return asyncio.run(search_engine_iter(query))
 
 

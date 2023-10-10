@@ -31,7 +31,7 @@ class ZillizKBService(KBService):
     @staticmethod
     def search(zilliz_name, content, limit=3):
         search_params = {
-            "metric_type": "L2",
+            "metric_type": "IP",
             "params": {},
         }
         c = ZillizKBService.get_collection(zilliz_name)
@@ -95,3 +95,4 @@ if __name__ == '__main__':
 
     Base.metadata.create_all(bind=engine)
     zillizService = ZillizKBService("test")
+

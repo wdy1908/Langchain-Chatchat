@@ -1,19 +1,19 @@
 from langchain.memory import ConversationBufferWindowMemory
-from server.agent.tools import tools, tool_names
-from server.agent.callbacks import CustomAsyncIteratorCallbackHandler, Status, dumps
+from server.agent.tools_select import tools, tool_names
+from server.agent.callbacks import CustomAsyncIteratorCallbackHandler, Status
 from langchain.agents import AgentExecutor, LLMSingleActionAgent
 from server.agent.custom_template import CustomOutputParser, CustomPromptTemplate
 from fastapi import Body
 from fastapi.responses import StreamingResponse
-from configs.model_config import LLM_MODEL, TEMPERATURE, HISTORY_LEN
+from configs import LLM_MODEL, TEMPERATURE, HISTORY_LEN, DATABASE_INFO
 from server.utils import wrap_done, get_ChatOpenAI, get_prompt_template
 from langchain.chains import LLMChain
-from typing import AsyncIterable, Optional
+from typing import AsyncIterable, Optional, Dict
 import asyncio
 from typing import List
 from server.chat.utils import History
 import json
-
+from server.agent import model_container
 
 async def agent_chat(query: str = Body(..., description="用户输入", examples=["恼羞成怒"]),
                      history: List[History] = Body([],
@@ -25,8 +25,9 @@ async def agent_chat(query: str = Body(..., description="用户输入", examples
                      stream: bool = Body(False, description="流式输出"),
                      model_name: str = Body(LLM_MODEL, description="LLM 模型名称。"),
                      temperature: float = Body(TEMPERATURE, description="LLM 采样温度", ge=0.0, le=1.0),
-                     prompt_name: str = Body("agent_chat",
+                     prompt_name: str = Body("Qwen",
                                              description="使用的prompt模板名称(在configs/prompt_config.py中配置)"),
+                     database_info: Dict = Body(DATABASE_INFO, description="知识库介绍"),
                      # top_p: float = Body(TOP_P, description="LLM 核采样。勿与temperature同时设置", gt=0.0, lt=1.0),
                      ):
     history = [History.from_data(h) for h in history]
@@ -43,13 +44,17 @@ async def agent_chat(query: str = Body(..., description="用户输入", examples
             temperature=temperature,
         )
 
-        prompt_template = CustomPromptTemplate(
-            template=get_prompt_template(prompt_name),
+        model_container.MODEL = model
+        model_container.DATABASE = database_info
+
+        prompt_template = get_prompt_template("agent_chat", prompt_name)
+        prompt_template_agent = CustomPromptTemplate(
+            template=prompt_template,
             tools=tools,
             input_variables=["input", "intermediate_steps", "history"]
         )
         output_parser = CustomOutputParser()
-        llm_chain = LLMChain(llm=model, prompt=prompt_template)
+        llm_chain = LLMChain(llm=model, prompt=prompt_template_agent)
         agent = LLMSingleActionAgent(
             llm_chain=llm_chain,
             output_parser=output_parser,
@@ -71,7 +76,6 @@ async def agent_chat(query: str = Body(..., description="用户输入", examples
                                                             verbose=True,
                                                             memory=memory,
                                                             )
-        input_msg = History(role="user", content="{{ input }}").to_msg_template(False)
         while True:
             try:
                 task = asyncio.create_task(wrap_done(

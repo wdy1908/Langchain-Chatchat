@@ -1,11 +1,13 @@
-from langchain.utilities import BingSearchAPIWrapper, DuckDuckGoSearchAPIWrapper
+
+import json
+from langchain.utilities import BingSearchAPIWrapper
 from configs import (BING_SEARCH_URL, BING_SUBSCRIPTION_KEY, 
                      LLM_MODEL, SEARCH_ENGINE_TOP_K, TEMPERATURE)
 from fastapi import Body
 from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from server.utils import wrap_done, get_ChatOpenAI
-from server.utils import BaseResponse, get_prompt_template
+from server.utils import BaseResponse
 from langchain.chains import LLMChain
 from langchain.callbacks import AsyncIteratorCallbackHandler
 from typing import AsyncIterable
@@ -14,27 +16,25 @@ from langchain.prompts.chat import ChatPromptTemplate
 from typing import List, Optional
 from server.chat.utils import History
 from langchain.docstore.document import Document
-import json
-
-
-def bing_search(text, result_len=SEARCH_ENGINE_TOP_K):
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+def zhihu_search(text, result_len=SEARCH_ENGINE_TOP_K):
     if not (BING_SEARCH_URL and BING_SUBSCRIPTION_KEY):
         return [{"snippet": "please set BING_SUBSCRIPTION_KEY and BING_SEARCH_URL in os ENV",
                  "title": "env info is not found",
                  "link": "https://python.langchain.com/en/latest/modules/agents/tools/examples/bing_search.html"}]
+    query = f"(site:zhihu.com) {text}"
     search = BingSearchAPIWrapper(bing_subscription_key=BING_SUBSCRIPTION_KEY,
                                   bing_search_url=BING_SEARCH_URL)
-    return search.results(text, result_len)
-
-
-def duckduckgo_search(text, result_len=SEARCH_ENGINE_TOP_K):
-    search = DuckDuckGoSearchAPIWrapper()
-    return search.results(text, result_len)
-
-
-SEARCH_ENGINES = {"bing": bing_search,
-                  "duckduckgo": duckduckgo_search,
-                  }
+    return search.results(query, result_len)
+PROMPT_TEMPLATES = {
+    "travel_assistant":
+    """
+    <指令>作为旅游助手，你需要提供与旅游相关的建议、信息和答案。确保你的建议是实用、安全和贴心的。如果你无法根据提供的信息回答问题，请说 “根据已知信息无法为您提供建议”。请不要添加任何编造的信息，确保回答真实可靠，并使用中文。 </指令>
+    <已知信息>{{ context }}</已知信息>、
+    <问题>{{ question }}</问题>"""
+}
 
 
 def search_result2docs(search_results):
@@ -49,17 +49,15 @@ def search_result2docs(search_results):
 
 async def lookup_search_engine(
         query: str,
-        search_engine_name: str,
         top_k: int = SEARCH_ENGINE_TOP_K,
 ):
-    search_engine = SEARCH_ENGINES[search_engine_name]
+    search_engine = zhihu_search
     results = await run_in_threadpool(search_engine, query, result_len=top_k)
     docs = search_result2docs(results)
     return docs
 
 
-async def search_engine_chat(query: str = Body(..., description="用户输入", examples=["你好"]),
-                            search_engine_name: str = Body(..., description="搜索引擎名称", examples=["duckduckgo"]),
+async def travel_assistant_chat(query: str = Body(..., description="用户输入", examples=["你好"]),
                             top_k: int = Body(SEARCH_ENGINE_TOP_K, description="检索结果数量"),
                             history: List[History] = Body([],
                                                             description="历史对话",
@@ -72,18 +70,14 @@ async def search_engine_chat(query: str = Body(..., description="用户输入", 
                             stream: bool = Body(False, description="流式输出"),
                             model_name: str = Body(LLM_MODEL, description="LLM 模型名称。"),
                             temperature: float = Body(TEMPERATURE, description="LLM 采样温度", ge=0.0, le=1.0),
-                            prompt_name: str = Body("default", description="使用的prompt模板名称(在configs/prompt_config.py中配置)"),
+                            prompt_name: str = Body("knowledge_base_chat", description="使用的prompt模板名称(在configs/prompt_config.py中配置)"),
                        ):
-    if search_engine_name not in SEARCH_ENGINES.keys():
-        return BaseResponse(code=404, msg=f"未支持搜索引擎 {search_engine_name}")
-
-    if search_engine_name == "bing" and not BING_SUBSCRIPTION_KEY:
+    if not BING_SUBSCRIPTION_KEY:
         return BaseResponse(code=404, msg=f"要使用Bing搜索引擎，需要设置 `BING_SUBSCRIPTION_KEY`")
 
     history = [History.from_data(h) for h in history]
 
-    async def search_engine_chat_iterator(query: str,
-                                          search_engine_name: str,
+    async def travel_assistant_chat_iterator(query: str,
                                           top_k: int,
                                           history: Optional[List[History]],
                                           model_name: str = LLM_MODEL,
@@ -96,10 +90,10 @@ async def search_engine_chat(query: str = Body(..., description="用户输入", 
             callbacks=[callback],
         )
 
-        docs = await lookup_search_engine(query, search_engine_name, top_k)
+        docs = await lookup_search_engine(query, top_k)
         context = "\n".join([doc.page_content for doc in docs])
 
-        prompt_template = get_prompt_template("search_engine_chat",prompt_name)
+        prompt_template = PROMPT_TEMPLATES[prompt_name].format(context=context, question=query)
         input_msg = History(role="user", content=prompt_template).to_msg_template(False)
         chat_prompt = ChatPromptTemplate.from_messages(
             [i.to_msg_template() for i in history] + [input_msg])
@@ -131,10 +125,39 @@ async def search_engine_chat(query: str = Body(..., description="用户输入", 
                              ensure_ascii=False)
         await task
 
-    return StreamingResponse(search_engine_chat_iterator(query=query,
-                                                         search_engine_name=search_engine_name,
+    return StreamingResponse(travel_assistant_chat_iterator(query=query,
                                                          top_k=top_k,
                                                          history=history,
                                                          model_name=model_name,
                                                          prompt_name=prompt_name),
                              media_type="text/event-stream")
+
+
+
+async def travel_assistant_iter(query: str):
+    response = await travel_assistant_chat(query=query,
+                                         model_name=LLM_MODEL,
+                                         temperature=TEMPERATURE,
+                                         history=[],
+                                         top_k = SEARCH_ENGINE_TOP_K,
+                                         prompt_name = "travel_assistant",
+                                         stream=False)
+
+    contents = ""
+    docs_text = ""
+    async for data in response.body_iterator:
+        data = json.loads(data)
+        contents = data["answer"]
+        docs = data["docs"]
+    for doc in docs:
+        docs_text += doc + "\n\n"
+
+    return contents
+
+def travel_assistant(query: str):
+    return asyncio.run(travel_assistant_iter(query))
+
+
+if __name__ == "__main__":
+    result = travel_assistant("北京旅游攻略")
+    print(result)
