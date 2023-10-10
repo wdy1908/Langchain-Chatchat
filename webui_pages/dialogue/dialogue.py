@@ -1,10 +1,12 @@
 import streamlit as st
+
+from webui_pages.knowledge_base.knowledge_base import datasets_info
 from webui_pages.utils import *
 from streamlit_chatbox import *
 from datetime import datetime
 from server.chat.search_engine_chat import SEARCH_ENGINES
 import os
-from configs import LLM_MODEL, TEMPERATURE
+from configs import LLM_MODEL, TEMPERATURE, PROMPT_TEMPLATES, HISTORY_LEN
 from server.utils import get_model_worker_config
 from typing import List, Dict
 chat_box = ChatBox(
@@ -13,9 +15,6 @@ chat_box = ChatBox(
         "chatchat_icon_blue_square_v2.png"
     )
 )
-
-
-
 
 
 def get_messages_history(history_len: int, content_in_expander: bool = False) -> List[Dict]:
@@ -101,13 +100,37 @@ def dialogue_page(api: ApiRequest):
                     st.error(msg)
                 elif msg := check_success_msg(r):
                     st.success(msg)
-                    st.session_state["prev_llm_model"] = llm_model
+                st.session_state["prev_llm_model"] = llm_model
+
+
+        index_prompt = {
+            "LLM 对话": "llm_chat",
+            "自定义Agent问答": "agent_chat",
+            "搜索引擎问答": "search_engine_chat",
+            "知识库问答": "knowledge_base_chat",
+        }
+        prompt_templates_kb_list = list(PROMPT_TEMPLATES[index_prompt[dialogue_mode]].keys())
+        prompt_template_name = prompt_templates_kb_list[0]
+        if "prompt_template_select" not in st.session_state:
+            st.session_state.prompt_template_select = prompt_templates_kb_list[0]
+
+
+        def on_prompt_change():
+            text = f"已切换为 {prompt_template_name} 模板。"
+            st.toast(text)
+
+        prompt_template_select = st.selectbox(
+            "请选择Prompt模板：",
+            prompt_templates_kb_list,
+            index=0,
+            on_change=on_prompt_change,
+            key="prompt_template_select",
+        )
+        prompt_template_name = st.session_state.prompt_template_select
 
         temperature = st.slider("Temperature：", 0.0, 1.0, TEMPERATURE, 0.05)
 
         history_len = st.number_input("历史对话轮数：", 0, 20, HISTORY_LEN)
-        LLM_MODEL_WEBUI = llm_model
-        TEMPERATURE_WEBUI = temperature
 
         def on_kb_change():
             st.toast(f"已加载知识库： {st.session_state.selected_kb}")
@@ -122,10 +145,7 @@ def dialogue_page(api: ApiRequest):
                     key="selected_kb",
                 )
                 kb_top_k = st.number_input("匹配知识条数：", 1, 20, VECTOR_SEARCH_TOP_K)
-
-                ## Bge 模型会超过1
                 score_threshold = st.slider("知识匹配分数阈值：", 0.0, 1.0, float(SCORE_THRESHOLD), 0.01)
-
                 # chunk_content = st.checkbox("关联上下文", False, disabled=True)
                 # chunk_size = st.slider("关联长度：", 0, 500, 250, disabled=True)
         elif dialogue_mode == "搜索引擎问答":
@@ -150,7 +170,11 @@ def dialogue_page(api: ApiRequest):
         if dialogue_mode == "LLM 对话":
             chat_box.ai_say("正在思考...")
             text = ""
-            r = api.chat_chat(prompt, history=history, model=llm_model, temperature=temperature)
+            r = api.chat_chat(prompt,
+                              history=history,
+                              model=llm_model,
+                              prompt_name=prompt_template_name,
+                              temperature=temperature)
             for t in r:
                 if error_msg := check_error_msg(t):  # check whether error occured
                     st.error(error_msg)
@@ -167,16 +191,18 @@ def dialogue_page(api: ApiRequest):
             ])
             text = ""
             ans = ""
-            support_agent = ["gpt", "Qwen", "qwen-api", "baichuan-api"] # 目前支持agent的模型
+            support_agent = ["gpt", "Qwen", "qwen-api", "baichuan-api"]  # 目前支持agent的模型
             if not any(agent in llm_model for agent in support_agent):
-                ans += "正在思考... \n\n <span style='color:red'>改模型并没有进行Agent对齐，无法正常使用Agent功能！</span>\n\n\n<span style='color:red'>请更换 GPT4或Qwen-14B等支持Agent的模型获得更好的体验！ </span> \n\n\n"
+                ans += "正在思考... \n\n <span style='color:red'>该模型并没有进行Agent对齐，无法正常使用Agent功能！</span>\n\n\n<span style='color:red'>请更换 GPT4或Qwen-14B等支持Agent的模型获得更好的体验！ </span> \n\n\n"
                 chat_box.update_msg(ans, element_index=0, streaming=False)
-
 
             for d in api.agent_chat(prompt,
                                     history=history,
                                     model=llm_model,
-                                    temperature=temperature):
+                                    prompt_name=prompt_template_name,
+                                    temperature=temperature,
+                                    database_info=datasets_info,
+                                    ):
                 try:
                     d = json.loads(d)
                 except:
@@ -207,6 +233,7 @@ def dialogue_page(api: ApiRequest):
                                              score_threshold=score_threshold,
                                              history=history,
                                              model=llm_model,
+                                             prompt_name=prompt_template_name,
                                              temperature=temperature):
                 if error_msg := check_error_msg(d):  # check whether error occured
                     st.error(error_msg)
@@ -226,6 +253,7 @@ def dialogue_page(api: ApiRequest):
                                             top_k=se_top_k,
                                             history=history,
                                             model=llm_model,
+                                            prompt_name=prompt_template_name,
                                             temperature=temperature):
                 if error_msg := check_error_msg(d):  # check whether error occured
                     st.error(error_msg)
