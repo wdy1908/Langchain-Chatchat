@@ -1,3 +1,4 @@
+from configs.kb_config import DATABASE_INFO
 import streamlit as st
 from webui_pages.utils import *
 from st_aggrid import AgGrid, JsCode
@@ -7,17 +8,18 @@ from server.knowledge_base.utils import get_file_path, LOADER_DICT
 from server.knowledge_base.kb_service.base import get_kb_details, get_kb_file_details
 from typing import Literal, Dict, Tuple
 from configs import (kbs_config,
-                    EMBEDDING_MODEL, DEFAULT_VS_TYPE,
-                    CHUNK_SIZE, OVERLAP_SIZE, ZH_TITLE_ENHANCE)
+                     EMBEDDING_MODEL, DEFAULT_VS_TYPE,
+                     CHUNK_SIZE, OVERLAP_SIZE, ZH_TITLE_ENHANCE)
 from server.utils import list_embed_models
 import os
 import time
 
-
 # SENTENCE_SIZE = 100
 
 cell_renderer = JsCode("""function(params) {if(params.value==true){return '✓'}else{return '×'}}""")
-
+datasets_info = DATABASE_INFO
+if "datasets_info" not in st.session_state:
+    st.session_state.datasets_info = DATABASE_INFO
 
 def config_aggrid(
         df: pd.DataFrame,
@@ -51,10 +53,13 @@ def file_exists(kb: str, selected_rows: List) -> Tuple[str, str]:
 
 
 def knowledge_base_page(api: ApiRequest):
+    if "datasets_info" not in st.session_state:
+        st.session_state.datasets_info = DATABASE_INFO
     try:
         kb_list = {x["kb_name"]: x for x in get_kb_details()}
     except Exception as e:
-        st.error("获取知识库信息错误，请检查是否已按照 `README.md` 中 `4 知识库初始化与迁移` 步骤完成初始化或迁移，或是否为数据库连接错误。")
+        st.error(
+            "获取知识库信息错误，请检查是否已按照 `README.md` 中 `4 知识库初始化与迁移` 步骤完成初始化或迁移，或是否为数据库连接错误。")
         st.stop()
     kb_names = list(kb_list.keys())
 
@@ -127,15 +132,24 @@ def knowledge_base_page(api: ApiRequest):
 
     elif selected_kb:
         kb = selected_kb
-
-
         # 上传文件
         files = st.file_uploader("上传知识文件：",
                                  [i for ls in LOADER_DICT.values() for i in ls],
                                  accept_multiple_files=True,
                                  )
 
+        show = f"这是关于{kb}的知识库"
+        try:
+            show = st.session_state.datasets_info[kb]
+        except:
+            pass
 
+        kb_description = st.text_area("请输入知识库介绍:", value=show, max_chars=None, key=None,
+                                      help=None, on_change=None, args=None, kwargs=None)
+
+
+        ## 无法更新
+        st.session_state.datasets_info[kb]  = kb_description
         # with st.sidebar:
         with st.expander(
                 "文件处理配置",
@@ -230,7 +244,8 @@ def knowledge_base_page(api: ApiRequest):
             st.write()
             # 将文件分词并加载到向量库中
             if cols[1].button(
-                    "重新添加至向量库" if selected_rows and (pd.DataFrame(selected_rows)["in_db"]).any() else "添加至向量库",
+                    "重新添加至向量库" if selected_rows and (
+                    pd.DataFrame(selected_rows)["in_db"]).any() else "添加至向量库",
                     disabled=not file_exists(kb, selected_rows)[0],
                     use_container_width=True,
             ):
@@ -275,9 +290,9 @@ def knowledge_base_page(api: ApiRequest):
                 empty = st.empty()
                 empty.progress(0.0, "")
                 for d in api.recreate_vector_store(kb,
-                                                chunk_size=chunk_size,
-                                                chunk_overlap=chunk_overlap,
-                                                zh_title_enhance=zh_title_enhance):
+                                                   chunk_size=chunk_size,
+                                                   chunk_overlap=chunk_overlap,
+                                                   zh_title_enhance=zh_title_enhance):
                     if msg := check_error_msg(d):
                         st.toast(msg)
                     else:

@@ -398,7 +398,7 @@ def files2docs_in_thread(
 if __name__ == "__main__":
     from pprint import pprint
 
-    kb_file = KnowledgeFile(filename="test.txt", knowledge_base_name="samples")
+    kb_file = KnowledgeFile(filename="Case.txt", knowledge_base_name="sql")
     # kb_file.text_splitter_name = "RecursiveCharacterTextSplitter"
     docs = kb_file.file2docs()
     pprint(docs[-1])

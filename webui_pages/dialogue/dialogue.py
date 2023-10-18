@@ -57,6 +57,7 @@ def dialogue_page(api: ApiRequest):
                                       "知识库问答",
                                       "搜索引擎问答",
                                       "自定义Agent问答",
+                                      "SQL查询",
                                       ],
                                      index=3,
                                      on_change=on_mode_change,
@@ -108,6 +109,7 @@ def dialogue_page(api: ApiRequest):
             "自定义Agent问答": "agent_chat",
             "搜索引擎问答": "search_engine_chat",
             "知识库问答": "knowledge_base_chat",
+            "SQL查询": "sql_chat",
         }
         prompt_templates_kb_list = list(PROMPT_TEMPLATES[index_prompt[dialogue_mode]].keys())
         prompt_template_name = prompt_templates_kb_list[0]
@@ -135,7 +137,7 @@ def dialogue_page(api: ApiRequest):
         def on_kb_change():
             st.toast(f"已加载知识库： {st.session_state.selected_kb}")
 
-        if dialogue_mode == "知识库问答":
+        if dialogue_mode == "知识库问答" or dialogue_mode == "SQL查询":
             with st.expander("知识库配置", True):
                 kb_list = api.list_knowledge_bases(no_remote_api=True)
                 selected_kb = st.selectbox(
@@ -255,6 +257,42 @@ def dialogue_page(api: ApiRequest):
                                             model=llm_model,
                                             prompt_name=prompt_template_name,
                                             temperature=temperature):
+                if error_msg := check_error_msg(d):  # check whether error occured
+                    st.error(error_msg)
+                elif chunk := d.get("answer"):
+                    text += chunk
+                    chat_box.update_msg(text, element_index=0)
+            chat_box.update_msg(text, element_index=0, streaming=False)
+            chat_box.update_msg("\n\n".join(d.get("docs", [])), element_index=1, streaming=False)
+        elif dialogue_mode == "SQL查询":
+            chat_box.ai_say([
+                f"正在查询知识库 `{selected_kb}` ...",
+                Markdown("...", in_expander=True, title="知识库匹配结果", state="complete"),
+            ])
+            text = ""
+            for d in api.sql_search(prompt,
+                                    knowledge_base_name=selected_kb,
+                                  top_k=kb_top_k,
+                                  score_threshold=score_threshold,):
+                if error_msg := check_error_msg(d):
+                    st.error(error_msg)
+                elif chunk := d.get("answer"):
+                    text += chunk
+                    chat_box.update_msg(text, element_index=0)
+            chat_box.update_msg(text, element_index=0, streaming=False)
+            chat_box.update_msg("\n\n".join(d.get("docs", [])), element_index=1, streaming=False)
+            knowledge_data = str(d.get("doc", []))
+            chat_box.ai_say([
+                f"正在执行SQL查询...",
+                Markdown("...", in_expander=True, title="SQL查询结果", state="complete"),
+            ])
+            text = ""
+            for d in api.sql_chat(prompt,
+                                knowledge_data=knowledge_data,
+                                history=history,
+                                model=llm_model,
+                                prompt_name=prompt_template_name,
+                                temperature=temperature):
                 if error_msg := check_error_msg(d):  # check whether error occured
                     st.error(error_msg)
                 elif chunk := d.get("answer"):
