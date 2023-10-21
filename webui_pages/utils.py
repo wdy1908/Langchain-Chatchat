@@ -1,6 +1,8 @@
 # 该文件包含webui通用工具，可以被不同的webui使用
 from typing import *
 from pathlib import Path
+
+from sqlalchemy import Connection
 from configs import (
     EMBEDDING_MODEL,
     DEFAULT_VS_TYPE,
@@ -545,6 +547,46 @@ class ApiRequest:
         else:
             response = self.post(
                 "/chat/sql_chat",
+                json=data,
+                stream=True,
+            )
+            return self._httpx_stream2generator(response, as_json=True)
+    def sql_execute(
+        self,
+        sql: str,
+        sql_result: str,
+        prompt: str,
+        stream: bool = True,
+        model: str = LLM_MODEL,
+        temperature: float = TEMPERATURE,
+        no_remote_api: bool = None,
+    ):
+        '''
+        对应api.py/chat/sql_execute接口
+        '''
+        if no_remote_api is None:
+            no_remote_api = self.no_remote_api
+
+        data = {
+            "sql": sql,
+            "sql_result": sql_result,
+            "prompt": prompt,
+            "stream": stream,
+            "model_name": model,
+            "temperature": temperature,
+            "local_doc_url": no_remote_api,
+        }
+
+        print(f"received input message:")
+        pprint(data)
+
+        if no_remote_api:
+            from server.chat.sql_chat import sql_execute
+            response = run_async(sql_execute(**data))
+            return self._fastapi_stream2generator(response, as_json=True)
+        else:
+            response = self.post(
+                "/chat/sql_execute",
                 json=data,
                 stream=True,
             )
