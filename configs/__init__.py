@@ -5,4 +5,5 @@ from .server_config import *
 from .prompt_config import *
 from .mysql_config import *
 
-VERSION = "v0.2.6-preview"
+
+VERSION = "v0.2.6"

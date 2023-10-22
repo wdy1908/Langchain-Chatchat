@@ -1,7 +1,7 @@
 ## 单独运行的时候需要添加
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+# import sys
+# import os
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 import re
 import warnings
@@ -33,9 +33,10 @@ async def search_knowledge_base_iter(database: str, query: str):
     response = await knowledge_base_chat(query=query,
                                          knowledge_base_name=database,
                                          model_name=model_container.MODEL.model_name,
-                                         temperature=model_container.MODEL.temperature,
+                                         temperature=0.01,
                                          history=[],
                                          top_k=VECTOR_SEARCH_TOP_K,
+                                         max_tokens=None,
                                          prompt_name="knowledge_base_chat",
                                          score_threshold=SCORE_THRESHOLD,
                                          stream=False)

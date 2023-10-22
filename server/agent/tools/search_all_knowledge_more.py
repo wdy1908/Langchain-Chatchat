@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 ## 单独运行的时候需要添加
 import sys
 import os
@@ -27,9 +25,10 @@ async def search_knowledge_base_iter(database: str, query: str) -> str:
     response = await knowledge_base_chat(query=query,
                                          knowledge_base_name=database,
                                          model_name=model_container.MODEL.model_name,
-                                         temperature=model_container.MODEL.temperature,
+                                         temperature=0.01,
                                          history=[],
                                          top_k=VECTOR_SEARCH_TOP_K,
+                                         max_tokens=None,
                                          prompt_name="default",
                                          score_threshold=SCORE_THRESHOLD,
                                          stream=False)
@@ -85,7 +84,7 @@ bigdata,大数据的就业情况如何
 Question: ${{用户的问题}}
 
 ```text
-${{知识库名称,查询问题}}
+${{知识库名称,查询问题,不要带有任何除了,之外的符号}}
 
 ```output
 数据库查询的结果
@@ -161,8 +160,8 @@ class LLMKnowledgeChain(LLMChain):
         try:
             output = search_knowledge(queries)
         except Exception as e:
-            output = "输入的信息有误或不存在知识库"
-            return output
+            output = "输入的信息有误或不存在知识库,错误信息如下:\n"
+            return output + str(e)
         return output
 
     def _process_llm_result(
@@ -177,14 +176,13 @@ class LLMKnowledgeChain(LLMChain):
         # text_match = re.search(r"^```text(.*?)```", llm_output, re.DOTALL)
         text_match = re.search(r"```text(.*)", llm_output, re.DOTALL)
         if text_match:
-
             expression = text_match.group(1).strip()
             cleaned_input_str = (expression.replace("\"", "").replace("“", "").
-                                 replace("”", "").replace("```","").strip())
+                                 replace("”", "").replace("```", "").strip())
             lines = cleaned_input_str.split("\n")
             # 使用逗号分割每一行，然后形成一个（数据库，查询）元组的列表
-            queries = [(line.split(",")[0].strip(), line.split(",")[1].strip()) for line in lines]
 
+            queries = [(line.split(",")[0].strip(), line.split(",")[1].strip()) for line in lines]
             run_manager.on_text("知识库查询询内容:\n\n" + str(queries) + " \n\n", color="blue", verbose=self.verbose)
             output = self._evaluate_expression(queries)
             run_manager.on_text("\nAnswer: ", verbose=self.verbose)
@@ -209,8 +207,8 @@ class LLMKnowledgeChain(LLMChain):
         if text_match:
 
             expression = text_match.group(1).strip()
-            cleaned_input_str = (expression.replace("\"", "").replace("“", "").replace("”", "").replace("```", "").strip())
-            print(cleaned_input_str)
+            cleaned_input_str = (
+                expression.replace("\"", "").replace("“", "").replace("”", "").replace("```", "").strip())
             lines = cleaned_input_str.split("\n")
             queries = [(line.split(",")[0].strip(), line.split(",")[1].strip()) for line in lines]
             await run_manager.on_text("知识库查询询内容:\n\n" + str(queries) + " \n\n", color="blue",
@@ -237,7 +235,6 @@ class LLMKnowledgeChain(LLMChain):
         _run_manager.on_text(inputs[self.input_key])
         self.database_names = model_container.DATABASE
         data_formatted_str = ',\n'.join([f' "{k}":"{v}"' for k, v in self.database_names.items()])
-        print("use_knowledge:", self.database_names)
         llm_output = self.llm_chain.predict(
             database_names=data_formatted_str,
             question=inputs[self.input_key],
@@ -273,7 +270,7 @@ class LLMKnowledgeChain(LLMChain):
             llm: BaseLanguageModel,
             prompt: BasePromptTemplate = PROMPT,
             **kwargs: Any,
-    ) -> LLMKnowledgeChain:
+    ):
         llm_chain = LLMChain(llm=llm, prompt=prompt)
         return cls(llm_chain=llm_chain, **kwargs)
 

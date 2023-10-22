@@ -20,20 +20,24 @@
 PROMPT_TEMPLATES = {}
 
 PROMPT_TEMPLATES["llm_chat"] = {
-    # LLM对话模板
-    "llm_chat": "{{ input }}",
-    "llm_chat2": "{{ input }}",
+    "default": "{{ input }}",
+
+    "py":
+    """
+    你是一个聪明的代码助手，请你给我写出简单的py代码。 \n
+    {{ input }}
+    """
+    ,
 }
 
 PROMPT_TEMPLATES["knowledge_base_chat"] = {
     "default":
         """
-        <指令>根据已知信息，简洁和专业的来回答问题。如果无法从中得到答案，请说 “根据已知信息无法回答该问题”。 </指令>
+        <指令>根据已知信息，简洁和专业的来回答问题。如果无法从中得到答案，请说 “根据已知信息无法回答该问题”，不允许在答案中添加编造成分，答案请使用中文。 </指令>
         <已知信息>{{ context }}</已知信息>、
         <问题>{{ question }}</问题>
         """,
-
-    "text2": #用户自己修改
+    "text":
         """
         <指令>根据已知信息，简洁和专业的来回答问题。如果无法从中得到答案，请说 “根据已知信息无法回答该问题”，答案请使用中文。 </指令>
         <已知信息>{{ context }}</已知信息>、
@@ -48,7 +52,7 @@ PROMPT_TEMPLATES["search_engine_chat"] = {
             <问题>{{ question }}</问题>
             """,
 
-    "search2":  #用户自己修改
+    "search":
         """
         <指令>根据已知信息，简洁和专业的来回答问题。如果无法从中得到答案，请说 “根据已知信息无法回答该问题”，答案请使用中文。 </指令>
         <已知信息>{{ context }}</已知信息>、
@@ -56,11 +60,14 @@ PROMPT_TEMPLATES["search_engine_chat"] = {
         """,
 }
 PROMPT_TEMPLATES["agent_chat"] = {
-    "Qwen":
+    "default":
         """
         Answer the following questions as best you can. If it is in order, you can use some tools appropriately.You have access to the following tools:
 
         {tools}
+
+        Please note that the "知识库查询工具" is information about the "西交利物浦大学" ,and if a question is asked about it, you must answer with the knowledge base，
+        Please note that the "天气查询工具" can only be used once since Question begin.
 
         Use the following format:
         Question: the input question you must answer1
@@ -103,6 +110,5 @@ PROMPT_TEMPLATES["agent_chat"] = {
         Question: {input}
         Thought: {agent_scratchpad}
 
-        """
-
+        """,
 }

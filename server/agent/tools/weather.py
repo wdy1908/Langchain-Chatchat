@@ -263,6 +263,7 @@ class LLMWeatherChain(Chain):
         await run_manager.on_text(llm_output, color="green", verbose=self.verbose)
         llm_output = llm_output.strip()
         text_match = re.search(r"^```text(.*?)```", llm_output, re.DOTALL)
+
         if text_match:
             expression = text_match.group(1)
             output = self._evaluate_expression(expression)
