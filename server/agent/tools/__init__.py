@@ -7,4 +7,4 @@ from .translator import translate
 from .weather import weathercheck
 from .shell import shell
 from .search_internet import search_internet
-
+from .travel_assistant import travel_assistant

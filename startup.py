@@ -147,7 +147,7 @@ def create_model_worker_app(log_level: str = "INFO", **kwargs) -> FastAPI:
 
             engine_args = AsyncEngineArgs.from_cli_args(args)
             engine = AsyncLLMEngine.from_engine_args(engine_args)
-
+            from fastchat.serve.model_worker import worker_id
             worker = VLLMWorker(
                         controller_addr = args.controller_address,
                         worker_addr = args.worker_address,

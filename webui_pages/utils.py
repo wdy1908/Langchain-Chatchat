@@ -412,36 +412,28 @@ class ApiRequest:
         knowledge_base_name: str,
         top_k: int = VECTOR_SEARCH_TOP_K,
         score_threshold: float = SCORE_THRESHOLD,
-        no_remote_api: bool = None,
+
     ):
         '''
         对应api.py/chat/sql_search接口
         '''
-        if no_remote_api is None:
-            no_remote_api = self.no_remote_api
 
         data = {
             "query": query,
             "knowledge_base_name": knowledge_base_name,
             "top_k": top_k,
             "score_threshold": score_threshold,
-            "local_doc_url": no_remote_api,
         }
 
         print(f"received input message:")
         pprint(data)
 
-        if no_remote_api:
-            from server.chat.sql_chat import sql_search
-            response = run_async(sql_search(**data))
-            return self._fastapi_stream2generator(response, as_json=True)
-        else:
-            response = self.post(
-                "/chat/sql_search",
-                json=data,
-                stream=True,
-            )
-            return self._httpx_stream2generator(response, as_json=True)
+        response = self.post(
+            "/chat/sql_search",
+            json=data,
+            stream=True,
+        )
+        return self._httpx_stream2generator(response, as_json=True)
 
     def sql_chat(
         self,
@@ -452,13 +444,10 @@ class ApiRequest:
         model: str = LLM_MODEL,
         temperature: float = TEMPERATURE,
         prompt_name: str = "sql_chat",
-        no_remote_api: bool = None,
     ):
         '''
         对应api.py/chat/sql_chat接口
         '''
-        if no_remote_api is None:
-            no_remote_api = self.no_remote_api
 
         data = {
             "query": query,
@@ -467,24 +456,18 @@ class ApiRequest:
             "stream": stream,
             "model_name": model,
             "temperature": temperature,
-            "local_doc_url": no_remote_api,
             "prompt_name": prompt_name,
         }
 
         print(f"received input message:")
         pprint(data)
 
-        if no_remote_api:
-            from server.chat.sql_chat import sql_chat
-            response = run_async(sql_chat(**data))
-            return self._fastapi_stream2generator(response, as_json=True)
-        else:
-            response = self.post(
-                "/chat/sql_chat",
-                json=data,
-                stream=True,
-            )
-            return self._httpx_stream2generator(response, as_json=True)
+        response = self.post(
+            "/chat/sql_chat",
+            json=data,
+            stream=True,
+        )
+        return self._httpx_stream2generator(response, as_json=True)
     def sql_execute(
         self,
         sql: str,
@@ -493,13 +476,11 @@ class ApiRequest:
         stream: bool = True,
         model: str = LLM_MODEL,
         temperature: float = TEMPERATURE,
-        no_remote_api: bool = None,
     ):
         '''
         对应api.py/chat/sql_execute接口
         '''
-        if no_remote_api is None:
-            no_remote_api = self.no_remote_api
+
 
         data = {
             "sql": sql,
@@ -508,23 +489,18 @@ class ApiRequest:
             "stream": stream,
             "model_name": model,
             "temperature": temperature,
-            "local_doc_url": no_remote_api,
         }
 
         print(f"received input message:")
         pprint(data)
 
-        if no_remote_api:
-            from server.chat.sql_chat import sql_execute
-            response = run_async(sql_execute(**data))
-            return self._fastapi_stream2generator(response, as_json=True)
-        else:
-            response = self.post(
-                "/chat/sql_execute",
-                json=data,
-                stream=True,
-            )
-            return self._httpx_stream2generator(response, as_json=True)
+
+        response = self.post(
+            "/chat/sql_execute",
+            json=data,
+            stream=True,
+        )
+        return self._httpx_stream2generator(response, as_json=True)
     # 知识库相关操作
 
     def list_knowledge_bases(

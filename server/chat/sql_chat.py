@@ -29,7 +29,6 @@ async def sql_search(query: str = Body(..., description="用户输入", examples
                 knowledge_base_name: str = Body(..., description="知识库名称", examples=["samples"]),
                 top_k: int = Body(VECTOR_SEARCH_TOP_K, description="匹配向量数"),
                 score_threshold: float = Body(SCORE_THRESHOLD, description="知识库匹配相关度阈值，取值范围在0-1之间，SCORE越小，相关度越高，取到1相当于不筛选，建议设置在0.5左右", ge=0, le=1),
-                local_doc_url: bool = Body(False, description="知识文件返回本地路径(true)或URL(false)"),
                 request: Request = None,
             ):
     kb = KBServiceFactory.get_service_by_name(knowledge_base_name)
@@ -46,11 +45,8 @@ async def sql_search(query: str = Body(..., description="用户输入", examples
         source_documents = []
         for inum, doc in enumerate(docs):
             filename = os.path.split(doc.metadata["source"])[-1]
-            if local_doc_url:
-                url = "file://" + doc.metadata["source"]
-            else:
-                parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name":filename})
-                url = f"{request.base_url}knowledge_base/download_doc?" + parameters
+            parameters = urlencode({"knowledge_base_name": knowledge_base_name, "file_name":filename})
+            url = f"{request.base_url}knowledge_base/download_doc?" + parameters
             text = f"""出处 [{inum + 1}] [{filename}]({url}) \n\n{doc.page_content}\n\n"""
             source_documents.append(text)
         yield json.dumps({"answer": "我已经找到了相关SQL案例","docs": source_documents,"doc": [context]}, ensure_ascii=False)
@@ -149,7 +145,6 @@ async def sql_chat( query: str = Body(..., description="用户输入", examples=
                     model_name: str = Body(LLM_MODEL, description="LLM 模型名称。"),
                     temperature: float = Body(TEMPERATURE, description="LLM 采样温度", ge=0.0, le=1.0),
                     prompt_name: str = Body("knowledge_base_chat", description="使用的prompt模板名称(在configs/prompt_config.py中配置)"),
-                    local_doc_url: bool = Body(False, description="知识文件返回本地路径(true)或URL(false)"),
                     request: Request = None,
             ):
 

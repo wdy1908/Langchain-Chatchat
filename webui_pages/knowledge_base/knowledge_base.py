@@ -154,8 +154,6 @@ def knowledge_base_page(api: ApiRequest):
             st.session_state["selected_kb_info"] = kb_info
             api.update_kb_info(kb, kb_info)
 
-        ## 无法更新
-        st.session_state.datasets_info[kb]  = kb_description
         # with st.sidebar:
         with st.expander(
                 "文件处理配置",
