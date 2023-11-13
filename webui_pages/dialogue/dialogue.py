@@ -182,7 +182,7 @@ def dialogue_page(api: ApiRequest):
                 selected_kb = st.selectbox(
                     "请选择知识库：",
                     kb_list,
-                    index=len(kb_list) - 1,
+                    index=len(kb_list) - 2,
                     on_change=on_kb_change,
                     key="selected_kb",
                 )
@@ -343,7 +343,15 @@ def dialogue_page(api: ApiRequest):
                     dialogue_text += chunk
                     chat_box.update_msg(dialogue_text, element_index=1)
             chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
-            sql = extract_sql_from_markdown(dialogue_text)
+            import sqlparse
+            sql = sqlparse.split(dialogue_text)
+            sql = sql[-1]
+            # sql = extract_sql_from_markdown(dialogue_text)
+            if sql and "limit" not in sql.lower():
+                if sql.endswith(";"):
+                    sql = sql[:-1] + " LIMIT 3;"
+                else:
+                    sql += " LIMIT 3;"
             sql_result = None
             from sqlalchemy import text
             con = connect_sql()
@@ -354,10 +362,12 @@ def dialogue_page(api: ApiRequest):
                     sql_result = con.execute(text(sql))
                     break
                 except Exception as e:
-                    error = f"\n第{tot-temp+1}次生成的结果为：{sql}\n结果不正确，报错信息为：{str(e)}\n请重新生成结果。"
+                    error = f"\n第{tot-temp+1}次生成的结果为：{sql}\n结果不正确，报错信息为：{str(e.args)}\n请修复这个错误并重新生成结果。\n"
                     st.error(error)
+                    st.error(e.args)
                     temp -= 1
-                    prompt += error
+                    prompt = prompt + error
+                    st.error(prompt)
                     dialogue_text = ""
                     for d in api.sql_chat(prompt,
                                         knowledge_data=knowledge_data,
@@ -387,7 +397,7 @@ def dialogue_page(api: ApiRequest):
             dialogue_text = ""
             # dialogue_text2 = ""
             for d in api.sql_execute(sql,
-                                     sql_result_df_markdown,
+                                     str(sql_result_df),
                                     prompt=prompt,
                                     model=llm_model,
                                     temperature=temperature,):

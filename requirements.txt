@@ -1,11 +1,13 @@
 langchain>=0.0.319
 langchain-experimental>=0.0.30
-fschat[model_worker]==0.2.31
-xformers>=0.0.22.post4
+# fschat[model_worker]==0.2.31
+fschat[model_worker]
+# xformers>=0.0.22.post4
+xformers
 openai>=0.28.1
 sentence_transformers
 transformers>=4.34
-torch>=2.0.1 # 推荐2.1
+torch==2.0.1 # 推荐2.1
 torchvision
 torchaudio
 fastapi>=0.104
@@ -54,3 +56,5 @@ tiktoken
 einops
 scipy
 transformers_stream_generator==0.0.4
+pymilvus
+pymysql

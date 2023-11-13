@@ -1,3 +1,7 @@
+import sys
+sys.path.append('/modelFactory/poolwdy/Langchain-Chatchat')
+
+
 import os
 from transformers import AutoTokenizer
 from configs import (
@@ -397,7 +401,7 @@ if __name__ == "__main__":
     from pprint import pprint
 
     kb_file = KnowledgeFile(filename="Case.txt", knowledge_base_name="sql")
-    # kb_file.text_splitter_name = "RecursiveCharacterTextSplitter"
+    kb_file.text_splitter_name = "SQLCaseTextSplitter"
     docs = kb_file.file2docs()
     pprint(docs[-1])
 

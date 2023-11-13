@@ -85,8 +85,8 @@ if __name__ == "__main__":
     text_splitter = SQLCaseTextSplitter(
         keep_separator=True,
         is_separator_regex=True,
-        chunk_size=250,
-        chunk_overlap=50
+        chunk_size=1,
+        chunk_overlap=0
     )
     ls = [
         """问题：哪栋建筑安装的摄像头最多？

@@ -62,6 +62,7 @@ async def sql_execute(sql: str = Body(..., description="用户输入", examples=
                     stream: bool = Body(False, description="流式输出"),
                     model_name: str = Body(LLM_MODEL, description="LLM 模型名称。"),
                     temperature: float = Body(TEMPERATURE, description="LLM 采样温度", ge=0.0, le=1.0),
+                    max_tokens: int = Body(None, description="限制LLM生成Token数量，默认None代表模型最大值"),
             ):
     async def sql_execute_iterator(sql: str,
                                 sql_result: str,
@@ -72,6 +73,7 @@ async def sql_execute(sql: str = Body(..., description="用户输入", examples=
         model = get_ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
+            max_tokens=max_tokens,
             callbacks=[callback],
         )
         prompt_template = get_prompt_template("sql_chat", "PROMPT")
@@ -145,6 +147,7 @@ async def sql_chat( query: str = Body(..., description="用户输入", examples=
                     model_name: str = Body(LLM_MODEL, description="LLM 模型名称。"),
                     temperature: float = Body(TEMPERATURE, description="LLM 采样温度", ge=0.0, le=1.0),
                     prompt_name: str = Body("knowledge_base_chat", description="使用的prompt模板名称(在configs/prompt_config.py中配置)"),
+                    max_tokens: int = Body(None, description="限制LLM生成Token数量，默认None代表模型最大值"),
                     request: Request = None,
             ):
 
@@ -160,6 +163,7 @@ async def sql_chat( query: str = Body(..., description="用户输入", examples=
         model = get_ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
+            max_tokens=max_tokens,
             callbacks=[callback],
         )
         context = "\n".join([knowledge_data])
