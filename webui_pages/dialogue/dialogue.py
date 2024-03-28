@@ -8,8 +8,8 @@ from webui_pages.utils import *
 from streamlit_chatbox import *
 from datetime import datetime
 import os
-from configs import (LLM_MODEL, TEMPERATURE, HISTORY_LEN, PROMPT_TEMPLATES,
-                     DEFAULT_KNOWLEDGE_BASE, DEFAULT_SEARCH_ENGINE,LANGCHAIN_LLM_MODEL)
+from configs import (TEMPERATURE, HISTORY_LEN, PROMPT_TEMPLATES,
+                     DEFAULT_KNOWLEDGE_BASE, DEFAULT_SEARCH_ENGINE, SUPPORT_AGENT_MODEL)
 from typing import List, Dict
 from server.mysql import connect_sql
 chat_box = ChatBox(
@@ -18,6 +18,8 @@ chat_box = ChatBox(
         "chatchat_icon_blue_square_v2.png"
     )
 )
+
+
 def get_messages_history(history_len: int, content_in_expander: bool = False) -> List[Dict]:
     '''
     返回消息历史。
@@ -38,32 +40,15 @@ def get_messages_history(history_len: int, content_in_expander: bool = False) ->
     return chat_box.filter_history(history_len=history_len, filter=filter)
 
 
-def get_default_llm_model(api: ApiRequest) -> (str, bool):
-    '''
-    从服务器上获取当前运行的LLM模型，如果本机配置的LLM_MODEL属于本地模型且在其中，则优先返回
-    返回类型为（model_name, is_local_model）
-    '''
-    running_models = api.list_running_models()
-    if not running_models:
-        return "", False
-
-    if LLM_MODEL in running_models:
-        return LLM_MODEL, True
-
-    local_models = [k for k, v in running_models.items() if not v.get("online_api")]
-    if local_models:
-        return local_models[0], True
-    return list(running_models)[0], False
-
-
-def dialogue_page(api: ApiRequest):
+def dialogue_page(api: ApiRequest, is_lite: bool = False):
     if not chat_box.chat_inited:
-        default_model = get_default_llm_model(api)[0]
+        default_model = api.get_default_llm_model()[0]
         st.toast(
             f"欢迎使用 [`Langchain-Chatchat`](https://github.com/chatchat-space/Langchain-Chatchat) ! \n\n"
             f"当前运行的模型`{default_model}`, 您可以开始提问了."
         )
         chat_box.init_session()
+
     with st.sidebar:
         # TODO: 对话模型与会话绑定
         def on_mode_change():
@@ -78,15 +63,16 @@ def dialogue_page(api: ApiRequest):
                 if con:
                     dialogue_text = f"{dialogue_text} 已连接到数据库。"
             st.toast(dialogue_text)
-            # sac.alert(dialogue_text, description="descp", type="success", closable=True, banner=True)
 
+
+        dialogue_modes = ["LLM 对话",
+                            "知识库问答",
+                            "搜索引擎问答",
+                            "自定义Agent问答",
+                            "SQL查询",
+                            ]
         dialogue_mode = st.selectbox("请选择对话模式：",
-                                     ["LLM 对话",
-                                      "知识库问答",
-                                      "搜索引擎问答",
-                                      "自定义Agent问答",
-                                      "SQL查询",
-                                      ],
+                                     dialogue_modes,
                                      index=4,
                                      on_change=on_mode_change,
                                      key="dialogue_mode",
@@ -105,7 +91,6 @@ def dialogue_page(api: ApiRequest):
             return x
 
         running_models = list(api.list_running_models())
-        running_models += LANGCHAIN_LLM_MODEL.keys()
         available_models = []
         config_models = api.list_config_models()
         worker_models = list(config_models.get("worker", {}))  # 仅列出在FSCHAT_MODEL_WORKERS中配置的模型
@@ -115,10 +100,8 @@ def dialogue_page(api: ApiRequest):
         for k, v in config_models.get("online", {}).items():  # 列出ONLINE_MODELS中直接访问的模型
             if not v.get("provider") and k not in running_models:
                 available_models.append(k)
-        for k, v in config_models.get("langchain", {}).items():  # 列出LANGCHAIN_LLM_MODEL支持的模型
-            available_models.append(k)
         llm_models = running_models + available_models
-        index = llm_models.index(st.session_state.get("cur_llm_model", get_default_llm_model(api)[0]))
+        index = llm_models.index(st.session_state.get("cur_llm_model", api.get_default_llm_model()[0]))
         llm_model = st.selectbox("选择LLM模型：",
                                  llm_models,
                                  index,
@@ -127,6 +110,7 @@ def dialogue_page(api: ApiRequest):
                                  key="llm_model",
                                  )
         if (st.session_state.get("prev_llm_model") != llm_model
+                and not is_lite
                 and not llm_model in config_models.get("online", {})
                 and not llm_model in config_models.get("langchain", {})
                 and llm_model not in running_models):
@@ -167,7 +151,6 @@ def dialogue_page(api: ApiRequest):
         prompt_template_name = st.session_state.prompt_template_select
 
         temperature = st.slider("Temperature：", 0.0, 1.0, TEMPERATURE, 0.05)
-
         history_len = st.number_input("历史对话轮数：", 0, 20, HISTORY_LEN)
 
         def on_kb_change():
@@ -187,9 +170,10 @@ def dialogue_page(api: ApiRequest):
                     key="selected_kb",
                 )
                 kb_top_k = st.number_input("匹配知识条数：", 1, 20, VECTOR_SEARCH_TOP_K)
-                score_threshold = st.slider("知识匹配分数阈值：", 0.0, 1.0, float(SCORE_THRESHOLD), 0.01)
-                # chunk_content = st.checkbox("关联上下文", False, disabled=True)
-                # chunk_size = st.slider("关联长度：", 0, 500, 250, disabled=True)
+
+                ## Bge 模型会超过1
+                score_threshold = st.slider("知识匹配分数阈值：", 0.0, 2.0, float(SCORE_THRESHOLD), 0.01)
+
         elif dialogue_mode == "搜索引擎问答":
             search_engine_list = api.list_search_engines()
             if DEFAULT_SEARCH_ENGINE in search_engine_list:
@@ -203,19 +187,213 @@ def dialogue_page(api: ApiRequest):
                     index=index,
                 )
                 se_top_k = st.number_input("匹配搜索结果条数：", 1, 20, SEARCH_ENGINE_TOP_K)
-
+    if 'step' not in st.session_state:
+        st.session_state['step'] = 1
     # Display chat messages from history on app rerun
-
     chat_box.output_messages()
 
     chat_input_placeholder = "请输入对话内容，换行请使用Shift+Enter "
 
-    if prompt := st.chat_input(chat_input_placeholder, key="prompt"):
+    def on_feedback(
+        feedback,
+        chat_history_id: str = "",
+        history_index: int = -1,
+    ):
+        reason = feedback["text"]
+        score_int = chat_box.set_feedback(feedback=feedback, history_index=history_index)
+        api.chat_feedback(chat_history_id=chat_history_id,
+                          score=score_int,
+                          reason=reason)
+        st.session_state["need_rerun"] = True
+
+    feedback_kwargs = {
+        "feedback_type": "thumbs",
+        "optional_text_label": "欢迎反馈您打分的理由",
+    }
+
+    if dialogue_mode == "SQL查询":
+        if st.session_state['step'] == 1:
+            if prompt := st.chat_input(chat_input_placeholder, key="prompt"):
+                query = prompt
+                history = get_messages_history(history_len)
+                chat_box.user_say(query)
+                chat_box.ai_say([
+                    f"正在查询知识库 `{selected_kb}` ...",
+                    Markdown("...", in_expander=True, title="知识库匹配结果", state="complete"),
+                ])
+                dialogue_text = ""
+                for d in api.sql_search(query,
+                                        knowledge_base_name=selected_kb,
+                                    top_k=kb_top_k,
+                                    score_threshold=score_threshold,
+                                    model_name=llm_model,
+                                    temperature=temperature,):
+                    if error_msg := check_error_msg(d):
+                        st.error(error_msg)
+                    elif chunk := d.get("answer"):
+                        dialogue_text += chunk
+                        chat_box.update_msg(dialogue_text, element_index=0)
+                chat_box.update_msg(dialogue_text, element_index=0, streaming=False)
+                chat_box.update_msg("\n\n".join(d.get("docs", [])), element_index=1, streaming=False)
+                knowledge_data = str(d.get("doc", []))
+                table_use = str(dialogue_text)
+                chat_box.ai_say([
+                    f"正在生成SQL语句并执行...",
+                    Markdown("...", in_expander=True, title="SQL生成结果", state="complete"),
+                ])
+                dialogue_text = ""
+                for d in api.sql_chat(query,
+                                    table_use=table_use,
+                                    knowledge_data=knowledge_data,
+                                    history=history,
+                                    model=llm_model,
+                                    prompt_name=prompt_template_name,
+                                    temperature=temperature):
+                    if error_msg := check_error_msg(d):  # check whether error occured
+                        st.error(error_msg)
+                    elif chunk := d.get("answer"):
+                        dialogue_text += chunk
+                        chat_box.update_msg(dialogue_text, element_index=1)
+                chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
+                # import sqlparse
+                # sql = sqlparse.split(dialogue_text)
+                # sql = sql[-1]
+                sql = extract_sql_from_markdown(dialogue_text)
+                if sql == "":
+                    import re
+                    sql_pattern = r"select .*?;"
+                    match = re.search(sql_pattern, dialogue_text.lower(), re.IGNORECASE)
+                    if match:
+                        sql = match.group()
+                if sql and "limit" not in sql.lower():
+                    if sql.endswith(";"):
+                        sql = sql[:-1] + " LIMIT 3;"
+                    else:
+                        sql += " LIMIT 3;"
+                sql_result = None
+                from sqlalchemy import text
+                con = connect_sql()
+                tot = 1
+                temp = 1
+                while temp>0:
+                    try:
+                        sql_result = con.execute(text(sql))
+                        break
+                    except Exception as e:
+                        error = f"\n第{tot-temp+1}次生成的结果为：{sql}\n结果不正确，报错信息为：{str(e.args)}\n请修复这个错误并重新生成结果。\n"
+                        st.error(error)
+                        st.error(e.args)
+                        temp -= 1
+                        query = query + error
+                        st.error(query)
+                        dialogue_text = ""
+                        for d in api.sql_chat(query,
+                                            table_use=table_use,
+                                            knowledge_data=knowledge_data,
+                                            history=history,
+                                            model='zhipu-api',
+                                            prompt_name=prompt_template_name,
+                                            temperature=temperature):
+                            if error_msg := check_error_msg(d):  # check whether error occured
+                                st.error(error_msg)
+                            elif chunk := d.get("answer"):
+                                dialogue_text += chunk
+                                chat_box.update_msg(dialogue_text, element_index=1)
+                        chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
+                        sql = extract_sql_from_markdown(dialogue_text)
+                if not sql_result:
+                    st.error("SQL语句生成错误。")
+                    return
+                sql_result_df = pd.DataFrame(sql_result.fetchall(), columns=sql_result.keys())
+                sql_result_df_markdown = sql_result_df.to_markdown()
+                chat_box.update_msg(sql_result_df_markdown, element_index=0, streaming=False)
+                preprompt = d.get("prompt")
+                st.session_state['user_prompt'] = prompt
+                st.session_state['user_sql'] = sql
+                st.session_state['step'] = 2
+                # print(preprompt)
+        if st.session_state['step'] == 2:
+            if prompt2 := st.chat_input("如果有需要请提出修改意见", key="prompt2"):
+                revise = prompt2
+                chat_box.user_say(revise)
+                chat_box.ai_say([
+                    f"正在根据要求针对性的修改SQL...",
+                    Markdown("...", in_expander=True, title="SQL修改结果", state="complete"),
+                ])
+                prompt = st.session_state['user_prompt']
+                sql = st.session_state['user_sql']
+                dialogue_text = ""
+                # dialogue_text2 = ""
+                for d in api.sql_execute(sql,
+                                        revise,
+                                        prompt=prompt,
+                                        model=llm_model,
+                                        temperature=temperature,):
+                    if error_msg := check_error_msg(d):  # check whether error occured
+                        st.error(error_msg)
+                    elif chunk := d.get("answer"):
+                        dialogue_text += chunk
+                        chat_box.update_msg(dialogue_text, element_index=1)
+                sql = extract_sql_from_markdown(dialogue_text)
+                if sql == "":
+                    import re
+                    sql_pattern = r"select .*?;"
+                    match = re.search(sql_pattern, dialogue_text, re.IGNORECASE)
+                    if match:
+                        sql = match.group()
+                if sql and "limit" not in sql.lower():
+                    if sql.endswith(";"):
+                        sql = sql[:-1] + " LIMIT 3;"
+                    else:
+                        sql += " LIMIT 3;"
+                sql_result = None
+                from sqlalchemy import text
+                con = connect_sql()
+                tot = 3
+                temp = 3
+                while temp>0:
+                    try:
+                        sql_result = con.execute(text(sql))
+                        break
+                    except Exception as e:
+                        error = f"\n第{tot-temp+1}次生成的结果为：{sql}\n结果不正确，报错信息为：{str(e.args)}\n请修复这个错误并重新生成结果。\n"
+                        st.error(error)
+                        st.error(e.args)
+                        temp -= 1
+                        prompt = prompt + error
+                        st.error(prompt)
+                        dialogue_text = ""
+                        for d in api.sql_chat(prompt,
+                                            table_use=table_use,
+                                            knowledge_data=knowledge_data,
+                                            history=history,
+                                            model=llm_model,
+                                            prompt_name=prompt_template_name,
+                                            temperature=temperature):
+                            if error_msg := check_error_msg(d):  # check whether error occured
+                                st.error(error_msg)
+                            elif chunk := d.get("answer"):
+                                dialogue_text += chunk
+                                chat_box.update_msg(dialogue_text, element_index=1)
+                        chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
+                        sql = extract_sql_from_markdown(dialogue_text)
+                if not sql_result:
+                    st.error("SQL语句生成错误。")
+                    return
+                    # elif chunk := d.get("response"):
+                    #     dialogue_text2 += chunk
+                    #     chat_box.update_msg(dialogue_text2, element_index=0)
+                sql_result_df = pd.DataFrame(sql_result.fetchall(), columns=sql_result.keys())
+                sql_result_df_markdown = sql_result_df.to_markdown()
+                chat_box.update_msg(sql_result_df_markdown, element_index=0, streaming=False)
+
+    elif prompt := st.chat_input(chat_input_placeholder, key="prompt"):
         history = get_messages_history(history_len)
         chat_box.user_say(prompt)
         if dialogue_mode == "LLM 对话":
             chat_box.ai_say("正在思考...")
-            dialogue_text = ""
+            text = ""
+            chat_history_id = ""
             r = api.chat_chat(prompt,
                               history=history,
                               model=llm_model,
@@ -225,24 +403,34 @@ def dialogue_page(api: ApiRequest):
                 if error_msg := check_error_msg(t):  # check whether error occured
                     st.error(error_msg)
                     break
-                dialogue_text += t
-                chat_box.update_msg(dialogue_text)
-            chat_box.update_msg(dialogue_text, streaming=False)  # 更新最终的字符串，去除光标
+                text += t.get("text", "")
+                chat_box.update_msg(text)
+                chat_history_id = t.get("chat_history_id", "")
 
-
+            metadata = {
+                "chat_history_id": chat_history_id,
+                }
+            chat_box.update_msg(text, streaming=False, metadata=metadata)  # 更新最终的字符串，去除光标
+            chat_box.show_feedback(**feedback_kwargs,
+                                   key=chat_history_id,
+                                   on_submit=on_feedback,
+                                   kwargs={"chat_history_id": chat_history_id, "history_index": len(chat_box.history) - 1})
 
         elif dialogue_mode == "自定义Agent问答":
-            chat_box.ai_say([
-                f"正在思考...",
-                Markdown("...", in_expander=True, title="思考过程", state="complete"),
+            if not any(agent in llm_model for agent in SUPPORT_AGENT_MODEL):
+                chat_box.ai_say([
+                    f"正在思考... \n\n <span style='color:red'>该模型并没有进行Agent对齐，请更换支持Agent的模型获得更好的体验！</span>\n\n\n",
+                    Markdown("...", in_expander=True, title="思考过程", state="complete"),
 
-            ])
-            dialogue_text = ""
+                ])
+            else:
+                chat_box.ai_say([
+                    f"正在思考...",
+                    Markdown("...", in_expander=True, title="思考过程", state="complete"),
+
+                ])
+            text = ""
             ans = ""
-            support_agent = ["Azure-OpenAI", "OpenAI", "Anthropic", "Qwen", "qwen-api", "baichuan-api"]  # 目前支持agent的模型
-            if not any(agent in llm_model for agent in support_agent):
-                ans += "正在思考... \n\n <span style='color:red'>该模型并没有进行Agent对齐，请更换支持Agent的模型获得更好的体验！</span>\n\n\n"
-                chat_box.update_msg(ans, element_index=0, streaming=False)
             for d in api.agent_chat(prompt,
                                     history=history,
                                     model=llm_model,
@@ -262,8 +450,8 @@ def dialogue_page(api: ApiRequest):
                     ans += chunk
                     chat_box.update_msg(ans, element_index=0)
                 if chunk := d.get("tools"):
-                    dialogue_text += "\n\n".join(d.get("tools", []))
-                    chat_box.update_msg(dialogue_text, element_index=1)
+                    text += "\n\n".join(d.get("tools", []))
+                    chat_box.update_msg(text, element_index=1)
             chat_box.update_msg(ans, element_index=0, streaming=False)
             chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
         elif dialogue_mode == "知识库问答":
@@ -299,7 +487,8 @@ def dialogue_page(api: ApiRequest):
                                             history=history,
                                             model=llm_model,
                                             prompt_name=prompt_template_name,
-                                            temperature=temperature):
+                                            temperature=temperature,
+                                            split_result=se_top_k > 1):
                 if error_msg := check_error_msg(d):  # check whether error occured
                     st.error(error_msg)
                 elif chunk := d.get("answer"):
@@ -316,7 +505,9 @@ def dialogue_page(api: ApiRequest):
             for d in api.sql_search(prompt,
                                     knowledge_base_name=selected_kb,
                                   top_k=kb_top_k,
-                                  score_threshold=score_threshold,):
+                                  score_threshold=score_threshold,
+                                  model_name=llm_model,
+                                  temperature=temperature,):
                 if error_msg := check_error_msg(d):
                     st.error(error_msg)
                 elif chunk := d.get("answer"):
@@ -325,13 +516,14 @@ def dialogue_page(api: ApiRequest):
             chat_box.update_msg(dialogue_text, element_index=0, streaming=False)
             chat_box.update_msg("\n\n".join(d.get("docs", [])), element_index=1, streaming=False)
             knowledge_data = str(d.get("doc", []))
-
+            table_use = str(dialogue_text)
             chat_box.ai_say([
                 f"正在生成SQL语句并执行...",
                 Markdown("...", in_expander=True, title="SQL生成结果", state="complete"),
             ])
             dialogue_text = ""
             for d in api.sql_chat(prompt,
+                                table_use=table_use,
                                 knowledge_data=knowledge_data,
                                 history=history,
                                 model=llm_model,
@@ -343,10 +535,16 @@ def dialogue_page(api: ApiRequest):
                     dialogue_text += chunk
                     chat_box.update_msg(dialogue_text, element_index=1)
             chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
-            import sqlparse
-            sql = sqlparse.split(dialogue_text)
-            sql = sql[-1]
-            # sql = extract_sql_from_markdown(dialogue_text)
+            # import sqlparse
+            # sql = sqlparse.split(dialogue_text)
+            # sql = sql[-1]
+            sql = extract_sql_from_markdown(dialogue_text)
+            if sql == "":
+                import re
+                sql_pattern = r"select .*?;"
+                match = re.search(sql_pattern, dialogue_text, re.IGNORECASE)
+                if match:
+                    sql = match.group()
             if sql and "limit" not in sql.lower():
                 if sql.endswith(";"):
                     sql = sql[:-1] + " LIMIT 3;"
@@ -370,6 +568,7 @@ def dialogue_page(api: ApiRequest):
                     st.error(prompt)
                     dialogue_text = ""
                     for d in api.sql_chat(prompt,
+                                        table_use=table_use,
                                         knowledge_data=knowledge_data,
                                         history=history,
                                         model=llm_model,
@@ -390,27 +589,83 @@ def dialogue_page(api: ApiRequest):
             chat_box.update_msg(sql_result_df_markdown, element_index=0, streaming=False)
             preprompt = d.get("prompt")
             # print(preprompt)
-            chat_box.ai_say([
-                f"正在分析SQL执行结果...",
-                Markdown("...", in_expander=True, title="SQL查询结果", state="complete"),
-            ])
-            dialogue_text = ""
-            # dialogue_text2 = ""
-            for d in api.sql_execute(sql,
-                                     str(sql_result_df),
-                                    prompt=prompt,
-                                    model=llm_model,
-                                    temperature=temperature,):
-                if error_msg := check_error_msg(d):  # check whether error occured
-                    st.error(error_msg)
-                elif chunk := d.get("answer"):
-                    dialogue_text += chunk
-                    chat_box.update_msg(dialogue_text, element_index=1)
-                # elif chunk := d.get("response"):
-                #     dialogue_text2 += chunk
-                #     chat_box.update_msg(dialogue_text2, element_index=0)
-            chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
-            chat_box.update_msg(dialogue_text, element_index=0, streaming=False)
+            if revise := st.chat_input(chat_input_placeholder, key="prompt2"):
+                chat_box.user_say(revise)
+                chat_box.ai_say([
+                    f"正在根据要求针对性的修改SQL...",
+                    Markdown("...", in_expander=True, title="SQL修改结果", state="complete"),
+                ])
+                dialogue_text = ""
+                # dialogue_text2 = ""
+                for d in api.sql_execute(sql,
+                                        revise,
+                                        prompt=prompt,
+                                        model=llm_model,
+                                        temperature=temperature,):
+                    if error_msg := check_error_msg(d):  # check whether error occured
+                        st.error(error_msg)
+                    elif chunk := d.get("answer"):
+                        dialogue_text += chunk
+                        chat_box.update_msg(dialogue_text, element_index=1)
+                sql = extract_sql_from_markdown(dialogue_text)
+                if sql == "":
+                    import re
+                    sql_pattern = r"select .*?;"
+                    match = re.search(sql_pattern, dialogue_text, re.IGNORECASE)
+                    if match:
+                        sql = match.group()
+                if sql and "limit" not in sql.lower():
+                    if sql.endswith(";"):
+                        sql = sql[:-1] + " LIMIT 3;"
+                    else:
+                        sql += " LIMIT 3;"
+                sql_result = None
+                from sqlalchemy import text
+                con = connect_sql()
+                tot = 3
+                temp = 3
+                while temp>0:
+                    try:
+                        sql_result = con.execute(text(sql))
+                        break
+                    except Exception as e:
+                        error = f"\n第{tot-temp+1}次生成的结果为：{sql}\n结果不正确，报错信息为：{str(e.args)}\n请修复这个错误并重新生成结果。\n"
+                        st.error(error)
+                        st.error(e.args)
+                        temp -= 1
+                        prompt = prompt + error
+                        st.error(prompt)
+                        dialogue_text = ""
+                        for d in api.sql_chat(prompt,
+                                            table_use=table_use,
+                                            knowledge_data=knowledge_data,
+                                            history=history,
+                                            model=llm_model,
+                                            prompt_name=prompt_template_name,
+                                            temperature=temperature):
+                            if error_msg := check_error_msg(d):  # check whether error occured
+                                st.error(error_msg)
+                            elif chunk := d.get("answer"):
+                                dialogue_text += chunk
+                                chat_box.update_msg(dialogue_text, element_index=1)
+                        chat_box.update_msg(dialogue_text, element_index=1, streaming=False)
+                        sql = extract_sql_from_markdown(dialogue_text)
+                if not sql_result:
+                    st.error("SQL语句生成错误。")
+                    return
+                    # elif chunk := d.get("response"):
+                    #     dialogue_text2 += chunk
+                    #     chat_box.update_msg(dialogue_text2, element_index=0)
+                sql_result_df = pd.DataFrame(sql_result.fetchall(), columns=sql_result.keys())
+                sql_result_df_markdown = sql_result_df.to_markdown()
+                chat_box.update_msg(sql_result_df_markdown, element_index=0, streaming=False)
+
+
+
+
+    if st.session_state.get("need_rerun"):
+        st.session_state["need_rerun"] = False
+        st.rerun()
 
     now = datetime.now()
     with st.sidebar:
@@ -422,7 +677,8 @@ def dialogue_page(api: ApiRequest):
                 use_container_width=True,
         ):
             chat_box.reset_history()
-            st.experimental_rerun()
+            st.session_state['step'] = 1
+            st.rerun()
 
     export_btn.download_button(
         "导出记录",

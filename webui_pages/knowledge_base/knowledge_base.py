@@ -8,9 +8,9 @@ from server.knowledge_base.utils import get_file_path, LOADER_DICT
 from server.knowledge_base.kb_service.base import get_kb_details, get_kb_file_details
 from typing import Literal, Dict, Tuple
 from configs import (kbs_config,
-                     EMBEDDING_MODEL, DEFAULT_VS_TYPE,
-                     CHUNK_SIZE, OVERLAP_SIZE, ZH_TITLE_ENHANCE)
-from server.utils import list_embed_models
+                    EMBEDDING_MODEL, DEFAULT_VS_TYPE,
+                    CHUNK_SIZE, OVERLAP_SIZE, ZH_TITLE_ENHANCE)
+from server.utils import list_embed_models, list_online_embed_models
 import os
 import time
 
@@ -52,9 +52,7 @@ def file_exists(kb: str, selected_rows: List) -> Tuple[str, str]:
     return "", ""
 
 
-def knowledge_base_page(api: ApiRequest):
-    if "datasets_info" not in st.session_state:
-        st.session_state.datasets_info = DATABASE_INFO
+def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
     try:
         kb_list = {x["kb_name"]: x for x in get_kb_details()}
     except Exception as e:
@@ -108,7 +106,10 @@ def knowledge_base_page(api: ApiRequest):
                 key="vs_type",
             )
 
-            embed_models = list_embed_models()
+            if is_lite:
+                embed_models = list_online_embed_models()
+            else:
+                embed_models = list_embed_models() + list_online_embed_models()
 
             embed_model = cols[1].selectbox(
                 "Embedding 模型",
@@ -137,7 +138,7 @@ def knowledge_base_page(api: ApiRequest):
                 st.toast(ret.get("msg", " "))
                 st.session_state["selected_kb_name"] = kb_name
                 st.session_state["selected_kb_info"] = kb_info
-                st.experimental_rerun()
+                st.rerun()
 
     elif selected_kb:
         kb = selected_kb
@@ -259,7 +260,7 @@ def knowledge_base_page(api: ApiRequest):
                                    chunk_size=chunk_size,
                                    chunk_overlap=chunk_overlap,
                                    zh_title_enhance=zh_title_enhance)
-                st.experimental_rerun()
+                st.rerun()
 
             # 将文件从向量库中删除，但不删除文件本身。
             if cols[2].button(
@@ -269,7 +270,7 @@ def knowledge_base_page(api: ApiRequest):
             ):
                 file_names = [row["file_name"] for row in selected_rows]
                 api.delete_kb_docs(kb, file_names=file_names)
-                st.experimental_rerun()
+                st.rerun()
 
             if cols[3].button(
                     "从知识库中删除",
@@ -278,7 +279,7 @@ def knowledge_base_page(api: ApiRequest):
             ):
                 file_names = [row["file_name"] for row in selected_rows]
                 api.delete_kb_docs(kb, file_names=file_names, delete_content=True)
-                st.experimental_rerun()
+                st.rerun()
 
         st.divider()
 
@@ -301,7 +302,7 @@ def knowledge_base_page(api: ApiRequest):
                         st.toast(msg)
                     else:
                         empty.progress(d["finished"] / d["total"], d["msg"])
-                st.experimental_rerun()
+                st.rerun()
 
         if cols[2].button(
                 "删除知识库",
@@ -310,4 +311,4 @@ def knowledge_base_page(api: ApiRequest):
             ret = api.delete_knowledge_base(kb)
             st.toast(ret.get("msg", " "))
             time.sleep(1)
-            st.experimental_rerun()
+            st.rerun()
