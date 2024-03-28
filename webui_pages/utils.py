@@ -429,7 +429,10 @@ class ApiRequest:
         knowledge_base_name: str,
         top_k: int = VECTOR_SEARCH_TOP_K,
         score_threshold: float = SCORE_THRESHOLD,
-
+        model_name: str = LLM_MODELS[0],
+        stream: bool = True,
+        temperature: float = TEMPERATURE,
+        max_tokens: int = None,
     ):
         '''
         对应api.py/chat/sql_search接口
@@ -440,6 +443,10 @@ class ApiRequest:
             "knowledge_base_name": knowledge_base_name,
             "top_k": top_k,
             "score_threshold": score_threshold,
+            "model_name": model_name,
+            "stream": stream,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
         }
 
         print(f"received input message:")
@@ -455,6 +462,7 @@ class ApiRequest:
     def sql_chat(
         self,
         query: str,
+        table_use: str,
         knowledge_data: str,
         history: List[Dict] = [],
         stream: bool = True,
@@ -468,6 +476,7 @@ class ApiRequest:
 
         data = {
             "query": query,
+            "table_use": table_use,
             "knowledge_data": knowledge_data,
             "history": history,
             "stream": stream,

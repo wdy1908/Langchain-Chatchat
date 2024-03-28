@@ -55,26 +55,37 @@ async def chat(query: str = Body(..., description="用户输入", examples=["恼
             callback.done),
         )
 
-        answer = ""
-        chat_history_id = add_chat_history_to_db(chat_type="llm_chat", query=query)
+        # answer = ""
+        # chat_history_id = add_chat_history_to_db(chat_type="llm_chat", query=query)
 
+        # if stream:
+        #     async for token in callback.aiter():
+        #         answer += token
+        #         # Use server-sent-events to stream the response
+        #         yield json.dumps(
+        #             {"text": token, "chat_history_id": chat_history_id},
+        #             ensure_ascii=False)
+        # else:
+        #     async for token in callback.aiter():
+        #         answer += token
+        #     yield json.dumps(
+        #         {"text": answer, "chat_history_id": chat_history_id},
+        #         ensure_ascii=False)
+
+        # if SAVE_CHAT_HISTORY and len(chat_history_id) > 0:
+        #     # 后续可以加入一些其他信息，比如真实的prompt等
+        #     update_chat_history(chat_history_id, response=answer)
+        # await task
         if stream:
             async for token in callback.aiter():
-                answer += token
                 # Use server-sent-events to stream the response
-                yield json.dumps(
-                    {"text": token, "chat_history_id": chat_history_id},
-                    ensure_ascii=False)
+                yield json.dumps({"text":token}, ensure_ascii=False)
         else:
+            answer = ""
             async for token in callback.aiter():
                 answer += token
-            yield json.dumps(
-                {"text": answer, "chat_history_id": chat_history_id},
-                ensure_ascii=False)
+            yield json.dumps({"text":answer}, ensure_ascii=False)
 
-        if SAVE_CHAT_HISTORY and len(chat_history_id) > 0:
-            # 后续可以加入一些其他信息，比如真实的prompt等
-            update_chat_history(chat_history_id, response=answer)
         await task
 
     return StreamingResponse(chat_iterator(query=query,
